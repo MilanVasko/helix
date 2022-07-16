@@ -1747,10 +1747,17 @@ fn extend_search_prev(cx: &mut Context) {
 fn search_selection(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
     let contents = doc.text().slice(..);
-    let query = doc.selection(view.id).primary().fragment(contents);
-    let regex = regex::escape(&query);
+
+    let mut regex = String::new();
+    for (index, selection) in doc.selection(view.id).iter().enumerate() {
+        if index > 0 {
+            regex += "|";
+        }
+        let query = selection.fragment(contents);
+        regex += &regex::escape(&query);
+    }
+    let msg = format!("register '{}' set to '{}'", '/', &regex);
     cx.editor.registers.get_mut('/').push(regex);
-    let msg = format!("register '{}' set to '{}'", '/', query);
     cx.editor.set_status(msg);
 }
 
