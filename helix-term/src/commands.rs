@@ -8,6 +8,7 @@ use tui::text::Spans;
 pub use typed::*;
 
 use helix_core::{
+    chars::char_is_word,
     comment, coords_at_pos, find_first_non_whitespace_char, find_root, graphemes,
     history::UndoKind,
     increment::date_time::DateTimeIncrementor,
@@ -1753,12 +1754,46 @@ fn search_selection(cx: &mut Context) {
         if index > 0 {
             regex += "|";
         }
-        let query = selection.fragment(contents);
-        regex += &regex::escape(&query);
+        regex += &create_query_from_selection(selection, contents);
     }
     let msg = format!("register '{}' set to '{}'", '/', &regex);
     cx.editor.registers.get_mut('/').push(regex);
     cx.editor.set_status(msg);
+}
+
+fn create_query_from_selection(selection: &Range, contents: RopeSlice) -> String {
+    let prefix = if is_beginning_of_word(contents, selection.from()) {
+        r"\b"
+    } else {
+        ""
+    };
+
+    let suffix = if is_end_of_word(contents, selection.to()) {
+        r"\b"
+    } else {
+        ""
+    };
+
+    let query = selection.fragment(contents);
+    format!("{}{}{}", prefix, regex::escape(&query), suffix)
+}
+
+fn is_beginning_of_word(contents: RopeSlice, current: usize) -> bool {
+    if current == 0 {
+        return is_word_at(contents, current);
+    }
+
+    let previous = current - 1;
+    !is_word_at(contents, previous) && is_word_at(contents, current)
+}
+
+fn is_end_of_word(contents: RopeSlice, current: usize) -> bool {
+    let previous = current - 1;
+    is_word_at(contents, previous) && !is_word_at(contents, current)
+}
+
+fn is_word_at(contents: RopeSlice, index: usize) -> bool {
+    contents.get_char(index).map(char_is_word).unwrap_or(false)
 }
 
 fn global_search(cx: &mut Context) {
@@ -2769,7 +2804,6 @@ pub mod insert {
         let text = doc.text().slice(..);
         let cursor = doc.selection(view.id).primary().cursor(text);
 
-        use helix_core::chars::char_is_word;
         let mut iter = text.chars_at(cursor);
         iter.reverse();
         for _ in 0..config.completion_trigger_len {
@@ -3700,10 +3734,9 @@ pub fn completion(cx: &mut Context) {
     // TODO: trigger_offset should be the cursor offset but we also need a starting offset from where we want to apply
     // completion filtering. For example logger.te| should filter the initial suggestion list with "te".
 
-    use helix_core::chars;
     let mut iter = text.chars_at(cursor);
     iter.reverse();
-    let offset = iter.take_while(|ch| chars::char_is_word(*ch)).count();
+    let offset = iter.take_while(|ch| char_is_word(*ch)).count();
     let start_offset = cursor.saturating_sub(offset);
     let prefix = text.slice(start_offset..cursor).to_string();
 
